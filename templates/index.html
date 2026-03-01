@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkillTree.dev — Tech Job Market Intelligence</title>
+  <meta name="description" content="Real-time tech job market intelligence. Track skill demand across 9,000+ jobs from 38 top companies." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌲</text></svg>" />
+
+  {% if debug %}
+    {# Vite dev server — run: cd frontend && npm run dev #}
+    <script type="module" src="http://localhost:5173/@vite/client"></script>
+    <script type="module" src="http://localhost:5173/src/main.jsx"></script>
+  {% else %}
+    {# Production build — run: cd frontend && npm run build #}
+    {# Note: no CSS file — Vite bundles all inline styles into main.js #}
+    {% load static %}
+    <script type="module" src="{% static 'frontend/js/main.js' %}"></script>
+  {% endif %}
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>
