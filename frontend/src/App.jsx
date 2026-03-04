@@ -67,6 +67,20 @@ const skillColor = (s) => SKILL_COLORS[s] || "#6b7280";
 const companyColor = (c) => COMPANY_COLORS[c] || "#6b7280";
 
 // ─────────────────────────────────────────────────────────────────────
+// MOBILE DETECTION HOOK
+// ─────────────────────────────────────────────────────────────────────
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < breakpoint);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // RELATIVE TIME
 // ─────────────────────────────────────────────────────────────────────
 function relTime(ts) {
@@ -150,8 +164,35 @@ function Sparkline({ data, color = "#00f0ff", w = 80, h = 24 }) {
   );
 }
 
-// Wider bars, larger fonts — fills the available card width
-function BarChart({ data, maxVal, height = 240 }) {
+function BarChart({ data, maxVal, height = 240, isMobile = false }) {
+  // Mobile: horizontal bars so labels are fully readable
+  if (isMobile) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+        {data.map((d, i) => {
+          const bw = Math.max(8, (d.value / maxVal) * 100);
+          return (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 12, color: "#e4e4e7", fontFamily: "mono", fontWeight: 500, width: 90, flexShrink: 0, textAlign: "right" }}>
+                {d.label}
+              </span>
+              <div style={{ flex: 1, height: 20, background: "rgba(255,255,255,0.03)", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{
+                  width: `${bw}%`, height: "100%", borderRadius: 4,
+                  background: `linear-gradient(90deg, ${d.color || "#00f0ff"}44, ${d.color || "#00f0ff"})`,
+                  transition: "width 0.5s ease",
+                }} />
+              </div>
+              <span style={{ fontSize: 11, color: "#9ca3af", fontFamily: "mono", fontWeight: 500, width: 45, flexShrink: 0, textAlign: "right" }}>
+                {d.value.toLocaleString()}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  // Desktop: vertical bars
   return (
     <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height, padding: "0 4px", width: "100%" }}>
       {data.map((d, i) => {
@@ -164,7 +205,10 @@ function BarChart({ data, maxVal, height = 240 }) {
               background: `linear-gradient(to top, ${d.color || "#00f0ff"}44, ${d.color || "#00f0ff"})`,
               transition: "height 0.5s ease",
             }} />
-            <span style={{ fontSize: 11, color: "#9ca3af", fontFamily: "mono", textAlign: "center", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span style={{
+              fontSize: 11, color: "#9ca3af", fontFamily: "mono", textAlign: "center",
+              width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
               {d.label}
             </span>
           </div>
@@ -185,9 +229,9 @@ function PulsingDot({ color = "#00ff88", size = 8 }) {
 
 function StatCard({ label, value, sub, accent = "#00f0ff" }) {
   return (
-    <div style={{ padding: "16px 20px", borderRight: "1px solid rgba(0,240,255,0.06)" }}>
+    <div className="stat-card">
       <div style={{ fontSize: 10, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "mono", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: accent, fontFamily: "mono" }}>{value}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: accent, fontFamily: "mono" }}>{value}</div>
       {sub && <div style={{ fontSize: 10, color: "#4b5563", fontFamily: "mono", marginTop: 2 }}>{sub}</div>}
     </div>
   );
@@ -233,11 +277,147 @@ function normaliseJob(j) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// RESPONSIVE CSS
+// ─────────────────────────────────────────────────────────────────────
+const RESPONSIVE_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+  @keyframes pulse { 0%,100%{transform:scale(1);opacity:.4} 50%{transform:scale(2.5);opacity:0} }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes glow { 0%,100%{box-shadow:0 0 20px rgba(0,240,255,.08)} 50%{box-shadow:0 0 40px rgba(0,240,255,.15)} }
+  @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  *{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#1a1a2e #07070d}
+  *::-webkit-scrollbar{width:5px}*::-webkit-scrollbar-track{background:#07070d}*::-webkit-scrollbar-thumb{background:#1a1a2e;border-radius:3px}
+  a{color:#00f0ff;text-decoration:none}a:hover{text-decoration:underline}
+  button:hover{opacity:.85}
+  .search-input::placeholder{color:#4b5563}
+  .search-input:focus{outline:none;border-color:rgba(0,240,255,0.4);box-shadow:0 0 0 3px rgba(0,240,255,0.06)}
+
+  /* ── Header ── */
+  .app-header {
+    position:relative; z-index:10; border-bottom:1px solid rgba(0,240,255,0.08);
+    padding:14px 24px; display:flex; align-items:center; justify-content:space-between;
+    background:rgba(7,7,13,0.85); backdrop-filter:blur(20px); gap:12px;
+  }
+  .header-left { display:flex; align-items:center; gap:14px; }
+  .header-right { display:flex; align-items:center; gap:16px; flex-shrink:0; }
+
+  /* ── Stats grid ── */
+  .stats-grid {
+    display:grid; grid-template-columns:repeat(5,1fr);
+    border-bottom:1px solid rgba(0,240,255,0.06); position:relative; z-index:10;
+    background:rgba(7,7,13,0.6);
+  }
+  .stat-card { padding:16px 20px; border-right:1px solid rgba(0,240,255,0.06); }
+
+  /* ── Nav tabs ── */
+  .nav-tabs {
+    position:relative; z-index:10; padding:16px 24px 0; display:flex; gap:3;
+    border-bottom:1px solid rgba(0,240,255,0.04); background:rgba(7,7,13,0.4);
+    overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  .nav-tabs::-webkit-scrollbar { height:0; display:none; }
+  .nav-tabs { scrollbar-width:none; }
+  .tab-btn { white-space:nowrap; flex-shrink:0; }
+
+  /* ── Content area ── */
+  .content-area { position:relative; z-index:10; padding:24px; }
+
+  /* ── Overview grid ── */
+  .overview-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; animation:fadeUp .3s ease; }
+  .overview-full-row { grid-column:1 / -1; }
+
+  /* ── Hot jobs preview (overview page) ── */
+  .hot-jobs-preview { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+
+  /* ── Companies grid ── */
+  .companies-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+
+  /* ── Jobs grid ── */
+  .jobs-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+
+  /* ── AI insights grid ── */
+  .insights-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+  /* ── Table scroll wrapper ── */
+  .table-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .table-scroll::-webkit-scrollbar { height:4px; }
+
+  /* ── Combo row ── */
+  .combo-row {
+    display:flex; align-items:center; gap:16px; padding:12px 16px;
+    border-bottom:1px solid rgba(255,255,255,0.03);
+  }
+  .combo-label { width:200px; font-size:13px; flex-shrink:0; }
+  .combo-bar { flex:1; height:16px; background:rgba(255,255,255,0.03); border-radius:4px; overflow:hidden; min-width:60px; }
+
+  /* ── Footer ── */
+  .app-footer {
+    position:relative; z-index:10; padding:20px 24px;
+    border-top:1px solid rgba(0,240,255,0.04);
+    display:flex; justify-content:space-between; font-size:10px;
+    color:#4b5563; font-family:'JetBrains Mono','IBM Plex Mono','SF Mono','Fira Code',monospace;
+  }
+
+  /* ── Search bar ── */
+  .search-bar { display:flex; gap:8px; align-items:center; margin-bottom:16px; }
+
+  /* ══════════════════════════════════════════════════════════════════
+     MOBILE BREAKPOINT — 768px
+     ══════════════════════════════════════════════════════════════════ */
+  @media (max-width: 768px) {
+    .app-header {
+      flex-wrap:wrap; padding:12px 16px; gap:10px;
+    }
+    .header-right { width:100%; justify-content:space-between; }
+
+    .stats-grid { grid-template-columns:repeat(2,1fr); }
+    .stat-card { padding:12px 14px; }
+    .stat-card:last-child { border-right:none; }
+    /* On 2-col, remove right border on even items */
+    .stat-card:nth-child(2n) { border-right:none; }
+
+    .nav-tabs { padding:10px 12px 0; gap:2px; }
+
+    .content-area { padding:16px 12px; }
+
+    .overview-grid { grid-template-columns:1fr; gap:12px; }
+    .hot-jobs-preview { grid-template-columns:1fr; gap:8px; }
+    .companies-grid { grid-template-columns:1fr 1fr; gap:8px; }
+    .jobs-grid { grid-template-columns:1fr; gap:10px; }
+    .insights-grid { grid-template-columns:1fr; gap:10px; }
+
+    .combo-row { flex-wrap:wrap; gap:8px; padding:10px 12px; }
+    .combo-label { width:100%; }
+    .combo-bar { width:100%; }
+
+    .app-footer { flex-direction:column; gap:6px; text-align:center; padding:16px 12px; }
+
+    .search-bar { flex-direction:column; align-items:stretch; }
+
+    /* Table min-width so it scrolls horizontally */
+    .skill-table { min-width:520px; }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     SMALL MOBILE — 480px
+     ══════════════════════════════════════════════════════════════════ */
+  @media (max-width: 480px) {
+    .app-header { padding:10px 12px; }
+    .stats-grid { grid-template-columns:1fr 1fr; }
+    .stat-card { padding:10px 12px; }
+    .content-area { padding:12px 8px; }
+    .companies-grid { grid-template-columns:1fr; }
+  }
+`;
+
+// ─────────────────────────────────────────────────────────────────────
 // MAIN DASHBOARD
 // ─────────────────────────────────────────────────────────────────────
 export default function SkillTreeDashboard() {
   const [tab, setTab] = useState("overview");
   const [tickerX, setTickerX] = useState(0);
+  const isMobile = useIsMobile();
 
   // API state
   const [analytics, setAnalytics] = useState(null);
@@ -403,6 +583,10 @@ export default function SkillTreeDashboard() {
   const maxJobVal = Math.max(...(topCompanies.map((c) => c.jobs)), 1);
   const maxSkillVal = Math.max(...(skillRankings.map((s) => s.jobs)), 1);
 
+  // On mobile, horizontal bars handle any count; on desktop limit vertical bars
+  const chartSlice = isMobile ? 8 : 8;
+  const chartHeight = isMobile ? 180 : 240;
+
   const statusColor =
     fetchStatusData?.status === "running" ? "#ffaa00"
     : fetchStatusData?.status === "success" ? "#00ff88"
@@ -411,27 +595,14 @@ export default function SkillTreeDashboard() {
 
   return (
     <div style={{ background: "#07070d", minHeight: "100vh", color: "#e4e4e7", fontFamily: sans, position: "relative" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
-        @keyframes pulse { 0%,100%{transform:scale(1);opacity:.4} 50%{transform:scale(2.5);opacity:0} }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes glow { 0%,100%{box-shadow:0 0 20px rgba(0,240,255,.08)} 50%{box-shadow:0 0 40px rgba(0,240,255,.15)} }
-        @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-        @keyframes spin { to{transform:rotate(360deg)} }
-        *{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#1a1a2e #07070d}
-        *::-webkit-scrollbar{width:5px}*::-webkit-scrollbar-track{background:#07070d}*::-webkit-scrollbar-thumb{background:#1a1a2e;border-radius:3px}
-        a{color:#00f0ff;text-decoration:none}a:hover{text-decoration:underline}
-        button:hover{opacity:.85}
-        .search-input::placeholder{color:#4b5563}
-        .search-input:focus{outline:none;border-color:rgba(0,240,255,0.4);box-shadow:0 0 0 3px rgba(0,240,255,0.06)}
-      `}</style>
+      <style>{RESPONSIVE_CSS}</style>
 
       <WebGLBackground />
 
       {/* ── HEADER ───────────────────────────────────── */}
-      <header style={{ position: "relative", zIndex: 10, borderBottom: "1px solid rgba(0,240,255,0.08)", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(7,7,13,0.85)", backdropFilter: "blur(20px)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: mono }}>
+      <header className="app-header">
+        <div className="header-left">
+          <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, fontFamily: mono }}>
             <span style={{ background: "linear-gradient(135deg,#00f0ff,#00ff88)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>SkillTree</span>
             <span style={{ color: "#4b5563", fontSize: 13 }}>.dev</span>
           </div>
@@ -440,7 +611,7 @@ export default function SkillTreeDashboard() {
             {fetchStatusData?.status === "running" ? "FETCHING" : fetchStatusData?.status === "success" ? "LIVE" : "IDLE"}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div className="header-right">
           {fetchStatusData?.jobs_in_db !== undefined && (
             <span style={{ fontSize: 11, color: "#4b5563", fontFamily: mono }}>
               {fetchStatusData.jobs_in_db.toLocaleString()} jobs in DB
@@ -464,7 +635,7 @@ export default function SkillTreeDashboard() {
       </div>
 
       {/* ── STATS BAR ─────────────────────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", borderBottom: "1px solid rgba(0,240,255,0.06)", position: "relative", zIndex: 10, background: "rgba(7,7,13,0.6)" }}>
+      <div className="stats-grid">
         <StatCard label="Total Jobs" value={totalJobs ? totalJobs.toLocaleString() : "—"} sub={Object.keys(meta.sources || {}).length ? `${Object.keys(meta.sources).length} sources` : "loading..."} />
         <StatCard label="Skills Tracked" value={meta.unique_skills || "—"} sub="across 11 categories" />
         <StatCard label="Remote Jobs" value={remoteInfo.pct !== undefined ? `${remoteInfo.pct}%` : "—"} sub={remoteInfo.remote ? `${remoteInfo.remote.toLocaleString()} listings` : ""} accent="#00ff88" />
@@ -473,10 +644,10 @@ export default function SkillTreeDashboard() {
       </div>
 
       {/* ── NAV TABS ──────────────────────────────────── */}
-      <div style={{ position: "relative", zIndex: 10, padding: "16px 24px 0", display: "flex", gap: 3, borderBottom: "1px solid rgba(0,240,255,0.04)", background: "rgba(7,7,13,0.4)" }}>
+      <div className="nav-tabs">
         {tabs.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            padding: "8px 18px", fontSize: 12, fontFamily: mono, cursor: "pointer",
+          <button key={t.id} className="tab-btn" onClick={() => setTab(t.id)} style={{
+            padding: isMobile ? "8px 12px" : "8px 18px", fontSize: 12, fontFamily: mono, cursor: "pointer",
             border: "none", borderBottom: tab === t.id ? "2px solid #00f0ff" : "2px solid transparent",
             background: "transparent", color: tab === t.id ? "#00f0ff" : "#6b7280",
             transition: "all 0.2s", fontWeight: tab === t.id ? 600 : 400,
@@ -485,7 +656,7 @@ export default function SkillTreeDashboard() {
       </div>
 
       {/* ── CONTENT ───────────────────────────────────── */}
-      <div style={{ position: "relative", zIndex: 10, padding: "24px" }}>
+      <div className="content-area">
 
         {error && (
           <div style={{ padding: 16, marginBottom: 16, borderRadius: 8, background: "rgba(255,100,100,0.08)", border: "1px solid rgba(255,100,100,0.2)", color: "#ff6b6b", fontFamily: mono, fontSize: 13 }}>
@@ -495,7 +666,7 @@ export default function SkillTreeDashboard() {
 
         {/* First-run banner */}
         {!loading && analyticsPending && (
-          <div style={{ padding: "12px 16px", marginBottom: 16, borderRadius: 8, background: "rgba(255,170,0,0.06)", border: "1px solid rgba(255,170,0,0.2)", color: "#ffaa00", fontFamily: mono, fontSize: 12, display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ padding: "12px 16px", marginBottom: 16, borderRadius: 8, background: "rgba(255,170,0,0.06)", border: "1px solid rgba(255,170,0,0.2)", color: "#ffaa00", fontFamily: mono, fontSize: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#ffaa00", animation: "pulse 1.5s ease-in-out infinite" }} />
             First scrape in progress — {meta.total_jobs ? `${meta.total_jobs.toLocaleString()} jobs collected so far.` : "collecting jobs from all sources…"}
             {" "}Skill analytics will appear automatically when the fetch completes. This takes 2–5 minutes.
@@ -508,25 +679,27 @@ export default function SkillTreeDashboard() {
           <>
             {/* ════ OVERVIEW ════ */}
             {tab === "overview" && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, animation: "fadeUp .3s ease" }}>
+              <div className="overview-grid">
 
-                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: 20, background: "rgba(255,255,255,0.01)" }}>
+                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(255,255,255,0.01)" }}>
                   <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", marginBottom: 16, fontWeight: 600 }}>📊 TOP LANGUAGES BY DEMAND</h3>
                   <BarChart
-                    data={skillRankings.filter((s) => s.category === "languages").slice(0, 8).map((s) => ({ label: s.skill, value: s.jobs, color: s.color }))}
-                    maxVal={maxSkillVal} height={240}
+                    isMobile={isMobile}
+                    data={skillRankings.filter((s) => s.category === "languages").slice(0, chartSlice).map((s) => ({ label: s.skill, value: s.jobs, color: s.color }))}
+                    maxVal={maxSkillVal} height={chartHeight}
                   />
                 </div>
 
-                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: 20, background: "rgba(255,255,255,0.01)" }}>
+                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(255,255,255,0.01)" }}>
                   <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", marginBottom: 16, fontWeight: 600 }}>🤖 AI & CLOUD DEMAND</h3>
                   <BarChart
-                    data={skillRankings.filter((s) => s.category === "ai_ml" || s.category === "cloud").slice(0, 8).map((s) => ({ label: s.skill, value: s.jobs, color: s.color }))}
-                    maxVal={maxSkillVal} height={240}
+                    isMobile={isMobile}
+                    data={skillRankings.filter((s) => s.category === "ai_ml" || s.category === "cloud").slice(0, chartSlice).map((s) => ({ label: s.skill, value: s.jobs, color: s.color }))}
+                    maxVal={maxSkillVal} height={chartHeight}
                   />
                 </div>
 
-                <div style={{ border: "1px solid rgba(0,240,255,0.1)", borderRadius: 12, padding: 20, background: "rgba(0,240,255,0.02)", animation: "glow 4s ease infinite" }}>
+                <div style={{ border: "1px solid rgba(0,240,255,0.1)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(0,240,255,0.02)", animation: "glow 4s ease infinite" }}>
                   <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", marginBottom: 14, fontWeight: 600 }}>🧠 AI INTELLIGENCE BRIEF</h3>
                   {(analytics?.ai_insights || AI_INSIGHTS).slice(0, 3).map((ins, i) => (
                     <div key={i} style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
@@ -536,30 +709,30 @@ export default function SkillTreeDashboard() {
                   ))}
                 </div>
 
-                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: 20, background: "rgba(255,255,255,0.01)" }}>
+                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(255,255,255,0.01)" }}>
                   <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", marginBottom: 14, fontWeight: 600 }}>🔗 HOTTEST SKILL COMBOS</h3>
                   {combos.slice(0, 6).map((c, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.03)", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 12 }}>
                         {c.combo.split(" + ").map((s, j) => (
                           <span key={j}>{j > 0 && <span style={{ color: "#4b5563", margin: "0 4px" }}>+</span>}<span style={{ color: "#00f0ff", fontWeight: 500 }}>{s}</span></span>
                         ))}
                       </span>
-                      <span style={{ fontSize: 11, fontFamily: mono, color: "#6b7280" }}>{c.jobs} jobs ({c.pct}%)</span>
+                      <span style={{ fontSize: 11, fontFamily: mono, color: "#6b7280", whiteSpace: "nowrap" }}>{c.jobs} jobs ({c.pct}%)</span>
                     </div>
                   ))}
                 </div>
 
-                <div style={{ gridColumn: "1 / -1", border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: 20, background: "rgba(255,255,255,0.01)" }}>
+                <div className="overview-full-row" style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(255,255,255,0.01)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                     <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", fontWeight: 600 }}>💼 HOT JOBS — APPLY NOW</h3>
                     <button onClick={() => setTab("jobs")} style={{ fontSize: 11, color: "#00f0ff", background: "rgba(0,240,255,0.06)", border: "1px solid rgba(0,240,255,0.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: mono }}>View All →</button>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-                    {hotJobs.slice(0, 4).map((job, i) => (
-                      <a key={i} href={job.url} target="_blank" rel="noopener noreferrer" style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 10, padding: 14, background: job.hot ? "rgba(255,100,100,0.03)" : "rgba(255,255,255,0.01)", display: "block", textDecoration: "none", color: "#e4e4e7" }}>
+                  <div className="hot-jobs-preview">
+                    {hotJobs.slice(0, isMobile ? 3 : 4).map((job, i) => (
+                      <a key={i} href={job.url} target="_blank" rel="noopener noreferrer" style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 10, padding: isMobile ? 12 : 14, background: job.hot ? "rgba(255,100,100,0.03)" : "rgba(255,255,255,0.01)", display: "block", textDecoration: "none", color: "#e4e4e7" }}>
                         {job.hot && <div style={{ fontSize: 9, color: "#ff6b6b", fontFamily: mono, marginBottom: 6 }}>🔥 TRENDING</div>}
-                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{job.title}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, wordBreak: "break-word" }}>{job.title}</div>
                         <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 8 }}>{job.company} • {job.location || "Remote"}</div>
                         <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 8 }}>
                           {(job.skills || []).slice(0, 3).map((s) => (
@@ -577,83 +750,140 @@ export default function SkillTreeDashboard() {
             {/* ════ LANGUAGES ════ */}
             {tab === "languages" && (
               <div style={{ animation: "fadeUp .3s ease" }}>
-                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: 24, background: "rgba(255,255,255,0.01)", marginBottom: 16 }}>
+                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: isMobile ? 14 : 24, background: "rgba(255,255,255,0.01)", marginBottom: 16 }}>
                   <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", marginBottom: 20, fontWeight: 600 }}>PROGRAMMING LANGUAGES — DEMAND RANKING</h3>
-                  <BarChart data={skillRankings.filter((s) => s.category === "languages").map((s) => ({ label: s.skill, value: s.jobs, color: s.color }))} maxVal={maxSkillVal} height={280} />
+                  <BarChart
+                    isMobile={isMobile}
+                    data={skillRankings.filter((s) => s.category === "languages").map((s) => ({ label: s.skill, value: s.jobs, color: s.color }))}
+                    maxVal={maxSkillVal} height={280}
+                  />
                 </div>
-                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, overflow: "hidden", background: "rgba(255,255,255,0.01)" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 80px 70px 90px", padding: "10px 16px", fontSize: 10, color: "#4b5563", textTransform: "uppercase", fontFamily: mono, borderBottom: "1px solid rgba(0,240,255,0.06)", background: "rgba(0,240,255,0.02)" }}>
-                    <span>#</span><span>Language</span><span style={{ textAlign: "right" }}>Jobs</span><span style={{ textAlign: "right" }}>Share</span><span style={{ textAlign: "center" }}>Trend</span><span style={{ textAlign: "right" }}>Direction</span>
-                  </div>
-                  {skillRankings.filter((s) => s.category === "languages").map((s, i) => {
-                    const dir = s.trend[s.trend.length - 1] >= s.trend[0];
-                    return (
-                      <div key={s.skill} style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 80px 70px 90px", padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.02)", alignItems: "center", animation: `fadeUp .3s ease ${i * 0.04}s both` }}>
-                        <span style={{ fontFamily: mono, color: "#4b5563" }}>{String(s.rank).padStart(2, "0")}</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color }} />
-                          <span style={{ fontWeight: 600 }}>{s.skill}</span>
+                {isMobile ? (
+                  /* Mobile: card list instead of table */
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {skillRankings.filter((s) => s.category === "languages").map((s, i) => {
+                      const dir = s.trend[s.trend.length - 1] >= s.trend[0];
+                      return (
+                        <div key={s.skill} style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 10, padding: "12px 14px", background: "rgba(255,255,255,0.01)", animation: `fadeUp .3s ease ${i * 0.04}s both` }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 12 }}>{String(s.rank).padStart(2, "0")}</span>
+                              <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                              <span style={{ fontWeight: 600, fontSize: 14 }}>{s.skill}</span>
+                            </div>
+                            <span style={{ fontFamily: mono, color: dir ? "#00ff88" : "#ff4444", fontSize: 12 }}>{dir ? "▲" : "▼"}</span>
+                          </div>
+                          <div style={{ display: "flex", gap: 16, fontSize: 12, fontFamily: mono, color: "#9ca3af" }}>
+                            <span>{s.jobs.toLocaleString()} jobs</span>
+                            <span>{s.pct}% share</span>
+                          </div>
                         </div>
-                        <span style={{ textAlign: "right", fontFamily: mono }}>{s.jobs.toLocaleString()}</span>
-                        <span style={{ textAlign: "right", fontFamily: mono }}>{s.pct}%</span>
-                        <div style={{ display: "flex", justifyContent: "center" }}><Sparkline data={s.trend} color={dir ? "#00ff88" : "#ff4444"} /></div>
-                        <span style={{ textAlign: "right", fontFamily: mono, color: dir ? "#00ff88" : "#ff4444" }}>{dir ? "▲ Rising" : "▼ Falling"}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* Desktop: full table */
+                  <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, overflow: "hidden", background: "rgba(255,255,255,0.01)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 80px 70px 90px", padding: "10px 16px", fontSize: 10, color: "#4b5563", textTransform: "uppercase", fontFamily: mono, borderBottom: "1px solid rgba(0,240,255,0.06)", background: "rgba(0,240,255,0.02)" }}>
+                      <span>#</span><span>Language</span><span style={{ textAlign: "right" }}>Jobs</span><span style={{ textAlign: "right" }}>Share</span><span style={{ textAlign: "center" }}>Trend</span><span style={{ textAlign: "right" }}>Direction</span>
+                    </div>
+                    {skillRankings.filter((s) => s.category === "languages").map((s, i) => {
+                      const dir = s.trend[s.trend.length - 1] >= s.trend[0];
+                      return (
+                        <div key={s.skill} style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 80px 70px 90px", padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.02)", alignItems: "center", animation: `fadeUp .3s ease ${i * 0.04}s both` }}>
+                          <span style={{ fontFamily: mono, color: "#4b5563" }}>{String(s.rank).padStart(2, "0")}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{s.skill}</span>
+                          </div>
+                          <span style={{ textAlign: "right", fontFamily: mono }}>{s.jobs.toLocaleString()}</span>
+                          <span style={{ textAlign: "right", fontFamily: mono }}>{s.pct}%</span>
+                          <div style={{ display: "flex", justifyContent: "center" }}><Sparkline data={s.trend} color={dir ? "#00ff88" : "#ff4444"} /></div>
+                          <span style={{ textAlign: "right", fontFamily: mono, color: dir ? "#00ff88" : "#ff4444" }}>{dir ? "▲ Rising" : "▼ Falling"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
             {/* ════ ALL SKILLS ════ */}
             {tab === "skills" && (
               <div style={{ animation: "fadeUp .3s ease" }}>
-                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, overflow: "hidden", background: "rgba(255,255,255,0.01)" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 80px 90px", padding: "10px 16px", fontSize: 10, color: "#4b5563", textTransform: "uppercase", fontFamily: mono, borderBottom: "1px solid rgba(0,240,255,0.06)", background: "rgba(0,240,255,0.02)" }}>
-                    <span>#</span><span>Skill</span><span style={{ textAlign: "right" }}>Jobs</span><span style={{ textAlign: "right" }}>Share</span><span style={{ textAlign: "center" }}>Category</span><span style={{ textAlign: "center" }}>Trend</span>
+                {isMobile ? (
+                  /* Mobile: compact card list */
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {skillRankings.map((s, i) => (
+                      <div key={s.skill} style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 10, padding: "10px 14px", background: "rgba(255,255,255,0.01)", animation: `fadeUp .25s ease ${i * 0.02}s both` }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 11 }}>{String(s.rank).padStart(2, "0")}</span>
+                            <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, fontSize: 14 }}>{s.skill}</span>
+                          </div>
+                          <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: "#6b7280", fontFamily: mono }}>{s.category}</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 16, fontSize: 12, fontFamily: mono, color: "#9ca3af" }}>
+                          <span>{s.jobs.toLocaleString()} jobs</span>
+                          <span>{s.pct}%</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  {skillRankings.map((s, i) => (
-                    <div key={s.skill} style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 80px 90px", padding: "11px 16px", borderBottom: "1px solid rgba(255,255,255,0.02)", alignItems: "center", animation: `fadeUp .25s ease ${i * 0.03}s both` }}>
-                      <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 12 }}>{String(s.rank).padStart(2, "0")}</span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color }} />
-                        <span style={{ fontWeight: 600, fontSize: 13 }}>{s.skill}</span>
-                      </div>
-                      <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.jobs.toLocaleString()}</span>
-                      <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.pct}%</span>
-                      <div style={{ display: "flex", justifyContent: "center" }}>
-                        <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: "#6b7280", fontFamily: mono }}>{s.category}</span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "center" }}><Sparkline data={s.trend} color={s.color} /></div>
+                ) : (
+                  /* Desktop: full table */
+                  <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, overflow: "hidden", background: "rgba(255,255,255,0.01)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 80px 90px", padding: "10px 16px", fontSize: 10, color: "#4b5563", textTransform: "uppercase", fontFamily: mono, borderBottom: "1px solid rgba(0,240,255,0.06)", background: "rgba(0,240,255,0.02)" }}>
+                      <span>#</span><span>Skill</span><span style={{ textAlign: "right" }}>Jobs</span><span style={{ textAlign: "right" }}>Share</span><span style={{ textAlign: "center" }}>Category</span><span style={{ textAlign: "center" }}>Trend</span>
                     </div>
-                  ))}
-                </div>
+                    {skillRankings.map((s, i) => (
+                      <div key={s.skill} style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 80px 90px", padding: "11px 16px", borderBottom: "1px solid rgba(255,255,255,0.02)", alignItems: "center", animation: `fadeUp .25s ease ${i * 0.03}s both` }}>
+                        <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 12 }}>{String(s.rank).padStart(2, "0")}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                          <span style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap" }}>{s.skill}</span>
+                        </div>
+                        <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.jobs.toLocaleString()}</span>
+                        <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.pct}%</span>
+                        <div style={{ display: "flex", justifyContent: "center" }}>
+                          <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: "#6b7280", fontFamily: mono, whiteSpace: "nowrap" }}>{s.category}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "center" }}><Sparkline data={s.trend} color={s.color} /></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             {/* ════ COMPANIES ════ */}
             {tab === "companies" && (
               <div style={{ animation: "fadeUp .3s ease" }}>
-                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: 24, background: "rgba(255,255,255,0.01)", marginBottom: 16 }}>
-                  <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", marginBottom: 20, fontWeight: 600 }}>🏢 TOP 15 COMPANIES BY OPEN ROLES</h3>
-                  <BarChart data={topCompanies.map((c) => ({ label: c.company, value: c.jobs, color: c.color }))} maxVal={maxJobVal} height={260} />
+                <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: isMobile ? 14 : 24, background: "rgba(255,255,255,0.01)", marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", marginBottom: 20, fontWeight: 600 }}>🏢 TOP COMPANIES BY OPEN ROLES</h3>
+                  <BarChart
+                    isMobile={isMobile}
+                    data={topCompanies.map((c) => ({ label: c.company, value: c.jobs, color: c.color }))}
+                    maxVal={maxJobVal} height={260}
+                  />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                <div className="companies-grid">
                   {topCompanies.map((c, i) => (
-                    <div key={c.company} style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 10, padding: 16, background: "rgba(255,255,255,0.01)", animation: `fadeUp .3s ease ${i * 0.04}s both` }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{c.company}</div>
-                        <div style={{ width: 10, height: 10, borderRadius: 3, background: c.color }} />
+                    <div key={c.company} style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 10, padding: isMobile ? 10 : 16, background: "rgba(255,255,255,0.01)", animation: `fadeUp .3s ease ${i * 0.04}s both` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ fontWeight: 600, fontSize: isMobile ? 12 : 14, wordBreak: "break-word", minWidth: 0 }}>{c.company}</div>
+                        <div style={{ width: 10, height: 10, borderRadius: 3, background: c.color, flexShrink: 0, marginLeft: 6 }} />
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
                         <div>
-                          <div style={{ fontSize: 9, color: "#6b7280", fontFamily: mono }}>OPEN ROLES</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, color: "#00f0ff", fontFamily: mono }}>{c.jobs}</div>
+                          <div style={{ fontSize: 9, color: "#6b7280", fontFamily: mono }}>ROLES</div>
+                          <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 700, color: "#00f0ff", fontFamily: mono }}>{c.jobs}</div>
                         </div>
                         {c.topSkill && (
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ fontSize: 9, color: "#6b7280", fontFamily: mono }}>TOP SKILL</div>
-                            <div style={{ fontSize: 14, fontWeight: 600, color: "#00ff88", fontFamily: mono }}>{c.topSkill}</div>
+                          <div style={{ textAlign: "right", minWidth: 0 }}>
+                            <div style={{ fontSize: 9, color: "#6b7280", fontFamily: mono }}>TOP</div>
+                            <div style={{ fontSize: isMobile ? 11 : 14, fontWeight: 600, color: "#00ff88", fontFamily: mono, wordBreak: "break-word" }}>{c.topSkill}</div>
                           </div>
                         )}
                       </div>
@@ -672,18 +902,18 @@ export default function SkillTreeDashboard() {
                 {combos.map((c, i) => {
                   const barW = Math.min(100, (c.pct / Math.max(combos[0]?.pct || 1, 1)) * 100);
                   return (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.03)", animation: `fadeUp .3s ease ${i * 0.05}s both` }}>
-                      <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 12, width: 24 }}>{String(i + 1).padStart(2, "0")}</span>
-                      <span style={{ width: 200, fontSize: 13 }}>
+                    <div key={i} className="combo-row" style={{ animation: `fadeUp .3s ease ${i * 0.05}s both` }}>
+                      <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 12, width: 24, flexShrink: 0 }}>{String(i + 1).padStart(2, "0")}</span>
+                      <span className="combo-label">
                         {c.combo.split(" + ").map((s, j) => (
                           <span key={j}>{j > 0 && <span style={{ color: "#4b5563", margin: "0 4px" }}>+</span>}<span style={{ color: "#00f0ff", fontWeight: 500 }}>{s}</span></span>
                         ))}
                       </span>
-                      <div style={{ flex: 1, height: 16, background: "rgba(255,255,255,0.03)", borderRadius: 4, overflow: "hidden" }}>
+                      <div className="combo-bar">
                         <div style={{ width: `${barW}%`, height: "100%", background: "linear-gradient(90deg,#00f0ff44,#00f0ff)", borderRadius: 4, transition: "width 0.8s ease" }} />
                       </div>
-                      <span style={{ fontFamily: mono, color: "#9ca3af", fontSize: 12, width: 80, textAlign: "right" }}>{c.jobs} jobs</span>
-                      <span style={{ fontFamily: mono, color: "#00ff88", fontSize: 12, width: 50, textAlign: "right" }}>{c.pct}%</span>
+                      <span style={{ fontFamily: mono, color: "#9ca3af", fontSize: 12, width: 80, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap" }}>{c.jobs} jobs</span>
+                      <span style={{ fontFamily: mono, color: "#00ff88", fontSize: 12, width: 50, textAlign: "right", flexShrink: 0 }}>{c.pct}%</span>
                     </div>
                   );
                 })}
@@ -695,13 +925,13 @@ export default function SkillTreeDashboard() {
               <div style={{ animation: "fadeUp .3s ease" }}>
 
                 {/* ── Search bar ── */}
-                <div style={{ marginBottom: 16, display: "flex", gap: 8, alignItems: "center" }}>
+                <div className="search-bar">
                   <div style={{ flex: 1, position: "relative" }}>
                     <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#4b5563", fontSize: 14, pointerEvents: "none" }}>🔍</span>
                     <input
                       className="search-input"
                       type="text"
-                      placeholder="Search by job title, company, or tech (e.g. React, Stripe, ML Engineer)…"
+                      placeholder={isMobile ? "Search jobs, companies, tech…" : "Search by job title, company, or tech (e.g. React, Stripe, ML Engineer)…"}
                       value={jobSearch}
                       onChange={(e) => setJobSearch(e.target.value)}
                       style={{
@@ -717,7 +947,7 @@ export default function SkillTreeDashboard() {
                   {jobSearch && (
                     <button
                       onClick={() => setJobSearch("")}
-                      style={{ padding: "10px 16px", fontSize: 12, fontFamily: mono, borderRadius: 8, border: "1px solid rgba(255,100,100,0.2)", background: "rgba(255,100,100,0.06)", color: "#ff6b6b", cursor: "pointer" }}
+                      style={{ padding: "10px 16px", fontSize: 12, fontFamily: mono, borderRadius: 8, border: "1px solid rgba(255,100,100,0.2)", background: "rgba(255,100,100,0.06)", color: "#ff6b6b", cursor: "pointer", flexShrink: 0 }}
                     >
                       ✕ Clear
                     </button>
@@ -725,14 +955,14 @@ export default function SkillTreeDashboard() {
                 </div>
 
                 {/* ── Info line ── */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
                   <PulsingDot color={searchLoading ? "#ffaa00" : "#00ff88"} />
                   <span style={{ fontSize: 12, color: "#6b7280", fontFamily: mono }}>
                     {searchLoading
                       ? "Searching…"
                       : searchResults !== null
-                        ? `${searchResults.length} result${searchResults.length !== 1 ? "s" : ""} for "${jobSearch.trim()}" — click any card to apply`
-                        : `${hotJobs.length} featured jobs from ${hotJobsSources.length} sources — listing rotates every 20 min — click any card to apply`}
+                        ? `${searchResults.length} result${searchResults.length !== 1 ? "s" : ""} for "${jobSearch.trim()}"`
+                        : `${hotJobs.length} featured jobs from ${hotJobsSources.length} sources`}
                   </span>
                 </div>
 
@@ -744,30 +974,30 @@ export default function SkillTreeDashboard() {
                 )}
 
                 {/* ── Job grid ── */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+                <div className="jobs-grid">
                   {displayedJobs.map((job, i) => (
                     <a key={job.id || i} href={job.url} target="_blank" rel="noopener noreferrer" style={{
                       border: `1px solid ${job.hot ? "rgba(255,100,100,0.15)" : "rgba(0,240,255,0.08)"}`,
-                      borderRadius: 12, padding: 18, textDecoration: "none", color: "#e4e4e7",
+                      borderRadius: 12, padding: isMobile ? 14 : 18, textDecoration: "none", color: "#e4e4e7",
                       background: job.hot ? "rgba(255,100,100,0.03)" : "rgba(255,255,255,0.01)",
                       display: "block", transition: "all 0.2s", animation: `fadeUp .3s ease ${Math.min(i, 10) * 0.04}s both`,
                     }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                        <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
                             {job.hot && <span style={{ fontSize: 9, color: "#ff6b6b", fontFamily: mono, flexShrink: 0 }}>🔥 HOT</span>}
                             {job.source_label && <span style={{ fontSize: 9, color: "#4b5563", fontFamily: mono, flexShrink: 0 }}>{job.source_label}</span>}
                           </div>
-                          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.title}</div>
-                          <div style={{ fontSize: 12, color: "#6b7280" }}>{job.company} • {job.location || "Remote"}</div>
+                          <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 600, marginBottom: 3, wordBreak: "break-word" }}>{job.title}</div>
+                          <div style={{ fontSize: 12, color: "#6b7280", wordBreak: "break-word" }}>{job.company} • {job.location || "Remote"}</div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: "#00ff88", fontFamily: mono }}>{job.salary}</div>
+                          <div style={{ fontSize: isMobile ? 13 : 14, fontWeight: 600, color: "#00ff88", fontFamily: mono }}>{job.salary}</div>
                           {job.time && <div style={{ fontSize: 10, color: "#4b5563", fontFamily: mono, marginTop: 2 }}>{job.time} ago</div>}
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
-                        {(job.skills || []).slice(0, 5).map((s) => (
+                        {(job.skills || []).slice(0, isMobile ? 4 : 5).map((s) => (
                           <span key={s} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "rgba(0,240,255,0.06)", color: "#00f0ff", fontFamily: mono }}>{s}</span>
                         ))}
                       </div>
@@ -790,22 +1020,22 @@ export default function SkillTreeDashboard() {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div className="insights-grid">
                   {(analytics?.ai_insights || AI_INSIGHTS).map((ins, i) => {
                     const colors = { hot: "#ff6b6b", trend: "#00ff88", warn: "#ffaa00", money: "#00f0ff", predict: "#8B5CF6", company: "#61DAFB" };
                     const bg = { hot: "rgba(255,100,100,0.04)", trend: "rgba(0,255,136,0.04)", warn: "rgba(255,170,0,0.04)", money: "rgba(0,240,255,0.04)", predict: "rgba(139,92,246,0.04)", company: "rgba(97,218,251,0.04)" };
                     return (
-                      <div key={i} style={{ border: `1px solid ${colors[ins.type]}22`, borderRadius: 12, padding: 20, background: bg[ins.type], animation: `fadeUp .3s ease ${i * 0.08}s both` }}>
+                      <div key={i} style={{ border: `1px solid ${colors[ins.type]}22`, borderRadius: 12, padding: isMobile ? 14 : 20, background: bg[ins.type], animation: `fadeUp .3s ease ${i * 0.08}s both` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: colors[ins.type], marginBottom: 8, fontFamily: mono }}>{ins.icon} {ins.title}</div>
                         <div style={{ fontSize: 13, color: "#c9cdd3", lineHeight: 1.7 }}>{ins.text}</div>
                       </div>
                     );
                   })}
                 </div>
-                <div style={{ marginTop: 20, padding: 16, border: "1px solid rgba(0,240,255,0.1)", borderRadius: 12, background: "rgba(0,240,255,0.02)" }}>
+                <div style={{ marginTop: 20, padding: isMobile ? 12 : 16, border: "1px solid rgba(0,240,255,0.1)", borderRadius: 12, background: "rgba(0,240,255,0.02)" }}>
                   <div style={{ fontSize: 11, fontFamily: mono, color: "#4b5563", marginBottom: 8 }}>📊 LAST SCRAPE</div>
                   {fetchStatusData && (
-                    <div style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.7 }}>
+                    <div style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.7, wordBreak: "break-word" }}>
                       Status: <span style={{ color: statusColor }}>{fetchStatusData.status}</span> •
                       {" "}{fetchStatusData.jobs_fetched || 0} jobs fetched •
                       {fetchStatusData.next_run_in && ` Next run in ${Math.round(fetchStatusData.next_run_in / 3600)}h`}
@@ -820,7 +1050,7 @@ export default function SkillTreeDashboard() {
       </div>
 
       {/* ── FOOTER ───────────────────────────────────── */}
-      <div style={{ position: "relative", zIndex: 10, padding: "20px 24px", borderTop: "1px solid rgba(0,240,255,0.04)", display: "flex", justifyContent: "space-between", fontSize: 10, color: "#4b5563", fontFamily: mono }}>
+      <div className="app-footer">
         <span>SkillTree.dev — Real-time tech job market intelligence • Open Source</span>
         <span>Data auto-refreshes every 8 hours • Built by Rommel Abbas</span>
       </div>

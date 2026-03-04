@@ -123,28 +123,31 @@ def run_fetch(
             logger.warning("%d jobs could not be saved (lock exhausted)", failed)
 
         # ── Analytics ─────────────────────────────────────────────────────
-        analytics_data = generate_analytics(scraped_jobs)
+        if scraped_jobs:
+            analytics_data = generate_analytics(scraped_jobs)
 
-        # ── Groq AI Insights (enriches analytics before saving) ───────────
-        try:
-            from django.conf import settings as dj_settings
-            groq_key = getattr(dj_settings, "GROQ_API_KEY", None)
-            if groq_key:
-                from .groq_insights import generate_ai_insights
-                logger.info("Generating AI insights via Groq...")
-                analytics_data["ai_insights"] = generate_ai_insights(analytics_data, groq_key)
-                logger.info("AI insights generated successfully")
-        except Exception as groq_err:
-            logger.warning("Groq insights skipped: %s", groq_err)
+            # Groq AI Insights (enriches analytics before saving)
+            try:
+                from django.conf import settings as dj_settings
+                groq_key = getattr(dj_settings, "GROQ_API_KEY", None)
+                if groq_key:
+                    from .groq_insights import generate_ai_insights
+                    logger.info("Generating AI insights via Groq...")
+                    analytics_data["ai_insights"] = generate_ai_insights(analytics_data, groq_key)
+                    logger.info("AI insights generated successfully")
+            except Exception as groq_err:
+                logger.warning("Groq insights skipped: %s", groq_err)
 
-        with transaction.atomic():
-            AnalyticsSnapshot.objects.create(data=analytics_data)
-            old_ids = list(
-                AnalyticsSnapshot.objects.order_by("-created_at")
-                .values_list("id", flat=True)[10:]
-            )
-            if old_ids:
-                AnalyticsSnapshot.objects.filter(id__in=old_ids).delete()
+            with transaction.atomic():
+                AnalyticsSnapshot.objects.create(data=analytics_data)
+                old_ids = list(
+                    AnalyticsSnapshot.objects.order_by("-created_at")
+                    .values_list("id", flat=True)[10:]
+                )
+                if old_ids:
+                    AnalyticsSnapshot.objects.filter(id__in=old_ids).delete()
+        else:
+            logger.warning("Scrape returned 0 jobs; preserving previous analytics snapshot.")
 
         log.completed_at = timezone.now()
         log.jobs_fetched = count
@@ -160,4 +163,3 @@ def run_fetch(
         log.error = str(exc)
         log.save()
         raise
-run_fetch(include_ats=True, include_feeds=True)

@@ -84,9 +84,22 @@ class AnalyticsView(APIView):
     """GET /api/analytics/ — latest analytics snapshot."""
 
     def get(self, request):
-        snapshot = AnalyticsSnapshot.objects.first()
-        if snapshot:
-            return Response(snapshot.data)
+        snapshots = list(AnalyticsSnapshot.objects.all()[:10])
+        if snapshots:
+            latest = snapshots[0]
+            latest_data = latest.data or {}
+            latest_total = ((latest_data.get("meta") or {}).get("total_jobs")) or 0
+
+            # If newest snapshot is empty but jobs still exist in DB,
+            # use the most recent non-empty snapshot for dashboard stability.
+            if latest_total == 0 and JobRecord.objects.exists():
+                for snap in snapshots[1:]:
+                    snap_data = snap.data or {}
+                    snap_total = ((snap_data.get("meta") or {}).get("total_jobs")) or 0
+                    if snap_total > 0:
+                        return Response(snap_data)
+
+            return Response(latest_data)
 
         # No snapshot yet — fetch is still in progress.
         # Return a lightweight live count so the dashboard can render
