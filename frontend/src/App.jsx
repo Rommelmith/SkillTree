@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { fetchAnalytics, fetchHotJobs, fetchJobs, fetchStatus, triggerFetch } from "./api.js";
+import { fetchAnalytics, fetchHotJobs, fetchJobs, fetchStatus, triggerFetch, fetchTrendMovers, fetchTrendBulk, fetchSkillTrend } from "./api.js";
 
 // ─────────────────────────────────────────────────────────────────────
 // SKILL COLOR MAP — used because analytics API doesn't carry colors
@@ -237,6 +237,70 @@ function StatCard({ label, value, sub, accent = "#00f0ff" }) {
   );
 }
 
+function DeltaBadge({ delta, size = "normal" }) {
+  if (delta === null || delta === undefined) {
+    return (
+      <span style={{
+        fontSize: size === "small" ? 9 : 10, padding: size === "small" ? "1px 5px" : "2px 7px",
+        borderRadius: 4, fontFamily: "'JetBrains Mono',monospace", fontWeight: 500,
+        background: "rgba(107,114,128,0.1)", color: "#6b7280",
+      }}>— collecting</span>
+    );
+  }
+  const isUp = delta > 0;
+  const isFlat = delta === 0;
+  const color = isFlat ? "#6b7280" : isUp ? "#00ff88" : "#ff6b6b";
+  const bg = isFlat ? "rgba(107,114,128,0.1)" : isUp ? "rgba(0,255,136,0.1)" : "rgba(255,107,107,0.1)";
+  const arrow = isFlat ? "~" : isUp ? "+" : "";
+  return (
+    <span style={{
+      fontSize: size === "small" ? 9 : 10, padding: size === "small" ? "1px 5px" : "2px 7px",
+      borderRadius: 4, fontFamily: "'JetBrains Mono',monospace", fontWeight: 500,
+      background: bg, color,
+    }}>{arrow}{delta}%{isFlat ? "" : isUp ? " ↑" : " ↓"}</span>
+  );
+}
+
+function TrendChart({ data, color = "#00f0ff", w = 300, h = 80 }) {
+  if (!data || data.length < 2) {
+    return (
+      <div style={{ width: w, height: h, display: "flex", alignItems: "center", justifyContent: "center", color: "#4b5563", fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }}>
+        Collecting data...
+      </div>
+    );
+  }
+  const max = Math.max(...data.map(d => d.mentions));
+  const min = Math.min(...data.map(d => d.mentions));
+  const range = max - min || 1;
+  const pad = 4;
+  const pts = data.map((d, i) =>
+    `${pad + (i / (data.length - 1)) * (w - 2 * pad)},${pad + (1 - (d.mentions - min) / range) * (h - 2 * pad)}`
+  ).join(" ");
+  // Area fill path
+  const areaPath = `M ${pad},${h - pad} ` +
+    data.map((d, i) =>
+      `L ${pad + (i / (data.length - 1)) * (w - 2 * pad)},${pad + (1 - (d.mentions - min) / range) * (h - 2 * pad)}`
+    ).join(" ") +
+    ` L ${w - pad},${h - pad} Z`;
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
+      <defs>
+        <linearGradient id="tcg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill="url(#tcg)" />
+      <polyline fill="none" stroke={color} strokeWidth="2" points={pts} />
+      <circle
+        cx={pad + ((data.length - 1) / (data.length - 1)) * (w - 2 * pad)}
+        cy={pad + (1 - (data[data.length - 1].mentions - min) / range) * (h - 2 * pad)}
+        r="3" fill={color}
+      />
+    </svg>
+  );
+}
+
 function LoadingSkeleton() {
   const shimmer = { background: "linear-gradient(90deg,rgba(255,255,255,0.03) 25%,rgba(255,255,255,0.07) 50%,rgba(255,255,255,0.03) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", borderRadius: 6 };
   return (
@@ -312,13 +376,19 @@ const RESPONSIVE_CSS = `
 
   /* ── Nav tabs ── */
   .nav-tabs {
-    position:relative; z-index:10; padding:16px 24px 0; display:flex; gap:3;
-    border-bottom:1px solid rgba(0,240,255,0.04); background:rgba(7,7,13,0.4);
+    position:relative; z-index:10; padding:12px 24px;
+    display:flex; gap:6px; flex-wrap:wrap;
+    border-bottom:1px solid rgba(0,240,255,0.08);
+    background:rgba(7,7,13,0.7); backdrop-filter:blur(12px);
     overflow-x:auto; -webkit-overflow-scrolling:touch;
   }
   .nav-tabs::-webkit-scrollbar { height:0; display:none; }
   .nav-tabs { scrollbar-width:none; }
-  .tab-btn { white-space:nowrap; flex-shrink:0; }
+  .tab-btn {
+    white-space:nowrap; flex-shrink:0; border-radius:8px;
+    transition:all 0.2s ease;
+  }
+  .tab-btn:hover { background:rgba(0,240,255,0.08) !important; color:#e4e4e7 !important; }
 
   /* ── Content area ── */
   .content-area { position:relative; z-index:10; padding:24px; }
@@ -377,7 +447,7 @@ const RESPONSIVE_CSS = `
     /* On 2-col, remove right border on even items */
     .stat-card:nth-child(2n) { border-right:none; }
 
-    .nav-tabs { padding:10px 12px 0; gap:2px; }
+    .nav-tabs { padding:10px 12px; gap:4px; }
 
     .content-area { padding:16px 12px; }
 
@@ -433,6 +503,12 @@ export default function SkillTreeDashboard() {
   const [jobSearch, setJobSearch] = useState("");
   const [searchResults, setSearchResults] = useState(null); // null = not searching
   const [searchLoading, setSearchLoading] = useState(false);
+
+  // Trends
+  const [trendMovers, setTrendMovers] = useState({ risers: [], fallers: [] });
+  const [trendBulk, setTrendBulk] = useState({ sparklines: {}, deltas: {} });
+  const [selectedSkill, setSelectedSkill] = useState(null);
+  const [skillTrendData, setSkillTrendData] = useState(null);
 
   // True while the server has jobs in DB but analytics snapshot not yet saved
   const analyticsPending = analytics?._pending === true;
@@ -530,6 +606,37 @@ export default function SkillTreeDashboard() {
     return () => clearTimeout(timerId);
   }, []);
 
+  // Trend data: load movers + bulk sparklines/deltas alongside analytics
+  useEffect(() => {
+    async function loadTrends() {
+      try {
+        const [movers, bulk] = await Promise.allSettled([
+          fetchTrendMovers(7, 5),
+          fetchTrendBulk(30, 7),
+        ]);
+        if (movers.status === "fulfilled") setTrendMovers(movers.value);
+        if (bulk.status === "fulfilled") setTrendBulk(bulk.value);
+      } catch {}
+    }
+    loadTrends();
+    const id = setInterval(loadTrends, 300_000); // refresh every 5 min
+    return () => clearInterval(id);
+  }, []);
+
+  // Load individual skill trend when selected
+  useEffect(() => {
+    if (!selectedSkill) { setSkillTrendData(null); return; }
+    let cancelled = false;
+    async function load() {
+      try {
+        const data = await fetchSkillTrend(selectedSkill, 90);
+        if (!cancelled) setSkillTrendData(data);
+      } catch { if (!cancelled) setSkillTrendData(null); }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [selectedSkill]);
+
   // Debounced search — calls /api/jobs/?search=... on title, company, description (includes tech)
   useEffect(() => {
     const q = jobSearch.trim();
@@ -572,6 +679,7 @@ export default function SkillTreeDashboard() {
 
   const tabs = [
     { id: "overview", label: "Overview" },
+    { id: "trends", label: "Trends" },
     { id: "languages", label: "Languages" },
     { id: "skills", label: "All Skills" },
     { id: "companies", label: "Companies" },
@@ -647,10 +755,17 @@ export default function SkillTreeDashboard() {
       <div className="nav-tabs">
         {tabs.map((t) => (
           <button key={t.id} className="tab-btn" onClick={() => setTab(t.id)} style={{
-            padding: isMobile ? "8px 12px" : "8px 18px", fontSize: 12, fontFamily: mono, cursor: "pointer",
-            border: "none", borderBottom: tab === t.id ? "2px solid #00f0ff" : "2px solid transparent",
-            background: "transparent", color: tab === t.id ? "#00f0ff" : "#6b7280",
-            transition: "all 0.2s", fontWeight: tab === t.id ? 600 : 400,
+            padding: isMobile ? "8px 14px" : "9px 20px",
+            fontSize: isMobile ? 12 : 13,
+            fontFamily: mono,
+            cursor: "pointer",
+            border: tab === t.id ? "1px solid rgba(0,240,255,0.3)" : "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 8,
+            background: tab === t.id ? "rgba(0,240,255,0.1)" : "rgba(255,255,255,0.03)",
+            color: tab === t.id ? "#00f0ff" : "#9ca3af",
+            transition: "all 0.2s",
+            fontWeight: tab === t.id ? 600 : 500,
+            letterSpacing: "0.02em",
           }}>{t.label}</button>
         ))}
       </div>
@@ -680,6 +795,46 @@ export default function SkillTreeDashboard() {
             {/* ════ OVERVIEW ════ */}
             {tab === "overview" && (
               <div className="overview-grid">
+
+                {/* ── MARKET MOVERS ── */}
+                {(trendMovers.risers.length > 0 || trendMovers.fallers.length > 0) && (
+                  <div className="overview-full-row" style={{ border: "1px solid rgba(0,240,255,0.1)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(0,240,255,0.02)", animation: "glow 4s ease infinite" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                      <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", fontWeight: 600 }}>📈 MARKET MOVERS</h3>
+                      <button onClick={() => setTab("trends")} style={{ fontSize: 11, color: "#00f0ff", background: "rgba(0,240,255,0.06)", border: "1px solid rgba(0,240,255,0.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: mono }}>Details →</button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+                      {/* Risers */}
+                      <div>
+                        <div style={{ fontSize: 10, color: "#00ff88", fontFamily: mono, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.1em" }}>Rising</div>
+                        {trendMovers.risers.map((r, i) => (
+                          <div key={r.skill} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ color: "#00ff88", fontSize: 12 }}>▲</span>
+                              <button onClick={() => { setSelectedSkill(r.skill); setTab("trends"); }} style={{ background: "none", border: "none", color: "#e4e4e7", cursor: "pointer", fontWeight: 500, fontSize: 13, padding: 0 }}>{r.skill}</button>
+                            </div>
+                            <DeltaBadge delta={r.delta_pct} size="small" />
+                          </div>
+                        ))}
+                        {trendMovers.risers.length === 0 && <div style={{ fontSize: 11, color: "#4b5563", fontFamily: mono }}>Collecting data...</div>}
+                      </div>
+                      {/* Fallers */}
+                      <div>
+                        <div style={{ fontSize: 10, color: "#ff6b6b", fontFamily: mono, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.1em" }}>Falling</div>
+                        {trendMovers.fallers.map((f, i) => (
+                          <div key={f.skill} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ color: "#ff6b6b", fontSize: 12 }}>▼</span>
+                              <button onClick={() => { setSelectedSkill(f.skill); setTab("trends"); }} style={{ background: "none", border: "none", color: "#e4e4e7", cursor: "pointer", fontWeight: 500, fontSize: 13, padding: 0 }}>{f.skill}</button>
+                            </div>
+                            <DeltaBadge delta={f.delta_pct} size="small" />
+                          </div>
+                        ))}
+                        {trendMovers.fallers.length === 0 && <div style={{ fontSize: 11, color: "#4b5563", fontFamily: mono }}>Collecting data...</div>}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(255,255,255,0.01)" }}>
                   <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", marginBottom: 16, fontWeight: 600 }}>📊 TOP LANGUAGES BY DEMAND</h3>
@@ -744,6 +899,156 @@ export default function SkillTreeDashboard() {
                     ))}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* ════ TRENDS ════ */}
+            {tab === "trends" && (
+              <div style={{ animation: "fadeUp .3s ease" }}>
+
+                {/* ── Skill Detail View ── */}
+                {selectedSkill && skillTrendData ? (
+                  <div>
+                    <button onClick={() => setSelectedSkill(null)} style={{ fontSize: 11, color: "#00f0ff", background: "rgba(0,240,255,0.06)", border: "1px solid rgba(0,240,255,0.2)", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontFamily: mono, marginBottom: 16 }}>← Back to Overview</button>
+                    <div style={{ border: "1px solid rgba(0,240,255,0.1)", borderRadius: 12, padding: isMobile ? 14 : 24, background: "rgba(0,240,255,0.02)", marginBottom: 16 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+                        <div>
+                          <h2 style={{ fontSize: isMobile ? 18 : 24, fontWeight: 700, fontFamily: mono, color: skillColor(selectedSkill), margin: 0 }}>{selectedSkill}</h2>
+                          <div style={{ fontSize: 11, color: "#6b7280", fontFamily: mono, marginTop: 4 }}>90-day demand trend</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          <div style={{ textAlign: "center", padding: "8px 14px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                            <div style={{ fontSize: 9, color: "#6b7280", fontFamily: mono }}>RANK</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: "#00f0ff", fontFamily: mono }}>#{skillTrendData.rank || "—"}</div>
+                          </div>
+                          <div style={{ textAlign: "center", padding: "8px 14px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                            <div style={{ fontSize: 9, color: "#6b7280", fontFamily: mono }}>MENTIONS</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: "#e4e4e7", fontFamily: mono }}>{skillTrendData.current_mentions?.toLocaleString() || "—"}</div>
+                          </div>
+                          <div style={{ textAlign: "center", padding: "8px 14px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                            <div style={{ fontSize: 9, color: "#6b7280", fontFamily: mono }}>7D DELTA</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}><DeltaBadge delta={skillTrendData.delta_7d} /></div>
+                          </div>
+                          <div style={{ textAlign: "center", padding: "8px 14px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                            <div style={{ fontSize: 9, color: "#6b7280", fontFamily: mono }}>30D DELTA</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}><DeltaBadge delta={skillTrendData.delta_30d} /></div>
+                          </div>
+                          <div style={{ textAlign: "center", padding: "8px 14px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                            <div style={{ fontSize: 9, color: "#6b7280", fontFamily: mono }}>VELOCITY</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: skillTrendData.velocity === "accelerating" ? "#00ff88" : skillTrendData.velocity === "decelerating" ? "#ff6b6b" : "#6b7280", fontFamily: mono, marginTop: 2 }}>
+                              {skillTrendData.velocity === "accelerating" ? "⇡ Accel" : skillTrendData.velocity === "decelerating" ? "⇣ Decel" : skillTrendData.velocity === "stable" ? "~ Stable" : "—"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {skillTrendData.timeseries && skillTrendData.timeseries.length >= 2 ? (
+                        <TrendChart data={skillTrendData.timeseries} color={skillColor(selectedSkill)} w={isMobile ? 280 : 700} h={isMobile ? 120 : 200} />
+                      ) : (
+                        <div style={{ padding: "40px 0", textAlign: "center", color: "#4b5563", fontFamily: mono, fontSize: 12 }}>
+                          Collecting trend data... Chart will appear after 2+ data points.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Trends Overview ── */
+                  <div>
+                    {/* Market Movers */}
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                      {/* Risers */}
+                      <div style={{ border: "1px solid rgba(0,255,136,0.15)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(0,255,136,0.02)" }}>
+                        <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00ff88", marginBottom: 14, fontWeight: 600 }}>▲ RISING SKILLS</h3>
+                        {trendMovers.risers.length > 0 ? trendMovers.risers.map((r, i) => (
+                          <div key={r.skill} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.03)", animation: `fadeUp .3s ease ${i * 0.05}s both` }}>
+                            <button onClick={() => setSelectedSkill(r.skill)} style={{ background: "none", border: "none", color: "#e4e4e7", cursor: "pointer", fontWeight: 600, fontSize: 14, padding: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ width: 8, height: 8, borderRadius: 2, background: skillColor(r.skill), flexShrink: 0 }} />
+                              {r.skill}
+                            </button>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <span style={{ fontSize: 11, color: "#6b7280", fontFamily: mono }}>{r.current_mentions} jobs</span>
+                              <DeltaBadge delta={r.delta_pct} />
+                            </div>
+                          </div>
+                        )) : (
+                          <div style={{ padding: "20px 0", textAlign: "center", color: "#4b5563", fontFamily: mono, fontSize: 12 }}>
+                            Collecting data... Trends will appear after 2+ scrape cycles.
+                          </div>
+                        )}
+                      </div>
+                      {/* Fallers */}
+                      <div style={{ border: "1px solid rgba(255,107,107,0.15)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(255,107,107,0.02)" }}>
+                        <h3 style={{ fontSize: 13, fontFamily: mono, color: "#ff6b6b", marginBottom: 14, fontWeight: 600 }}>▼ DECLINING SKILLS</h3>
+                        {trendMovers.fallers.length > 0 ? trendMovers.fallers.map((f, i) => (
+                          <div key={f.skill} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.03)", animation: `fadeUp .3s ease ${i * 0.05}s both` }}>
+                            <button onClick={() => setSelectedSkill(f.skill)} style={{ background: "none", border: "none", color: "#e4e4e7", cursor: "pointer", fontWeight: 600, fontSize: 14, padding: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ width: 8, height: 8, borderRadius: 2, background: skillColor(f.skill), flexShrink: 0 }} />
+                              {f.skill}
+                            </button>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <span style={{ fontSize: 11, color: "#6b7280", fontFamily: mono }}>{f.current_mentions} jobs</span>
+                              <DeltaBadge delta={f.delta_pct} />
+                            </div>
+                          </div>
+                        )) : (
+                          <div style={{ padding: "20px 0", textAlign: "center", color: "#4b5563", fontFamily: mono, fontSize: 12 }}>
+                            Collecting data... Trends will appear after 2+ scrape cycles.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* All skills with sparklines + deltas */}
+                    <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, padding: isMobile ? 14 : 20, background: "rgba(255,255,255,0.01)" }}>
+                      <h3 style={{ fontSize: 13, fontFamily: mono, color: "#00f0ff", marginBottom: 14, fontWeight: 600 }}>📊 ALL SKILLS — TREND OVERVIEW</h3>
+                      <p style={{ fontSize: 11, color: "#4b5563", fontFamily: mono, marginBottom: 12 }}>Click any skill to see its full trend chart</p>
+                      {isMobile ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {skillRankings.map((s, i) => {
+                            const delta = trendBulk.deltas?.[s.skill];
+                            return (
+                              <div key={s.skill} onClick={() => setSelectedSkill(s.skill)} style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 10, padding: "10px 14px", background: "rgba(255,255,255,0.01)", cursor: "pointer", animation: `fadeUp .25s ease ${i * 0.02}s both` }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 11 }}>{String(s.rank).padStart(2, "0")}</span>
+                                    <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                                    <span style={{ fontWeight: 600, fontSize: 13 }}>{s.skill}</span>
+                                  </div>
+                                  <DeltaBadge delta={delta} size="small" />
+                                </div>
+                                <div style={{ fontSize: 11, fontFamily: mono, color: "#9ca3af", marginTop: 4 }}>{s.jobs.toLocaleString()} jobs • {s.pct}%</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(0,240,255,0.06)" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 70px 90px", padding: "10px 16px", fontSize: 10, color: "#4b5563", textTransform: "uppercase", fontFamily: mono, borderBottom: "1px solid rgba(0,240,255,0.06)", background: "rgba(0,240,255,0.02)" }}>
+                            <span>#</span><span>Skill</span><span style={{ textAlign: "right" }}>Jobs</span><span style={{ textAlign: "right" }}>Share</span><span style={{ textAlign: "center" }}>7d</span><span style={{ textAlign: "center" }}>Trend</span>
+                          </div>
+                          {skillRankings.map((s, i) => {
+                            const sparkData = trendBulk.sparklines?.[s.skill];
+                            const delta = trendBulk.deltas?.[s.skill];
+                            return (
+                              <div key={s.skill} onClick={() => setSelectedSkill(s.skill)} style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 70px 90px", padding: "11px 16px", borderBottom: "1px solid rgba(255,255,255,0.02)", alignItems: "center", cursor: "pointer", animation: `fadeUp .25s ease ${i * 0.02}s both` }}>
+                                <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 12 }}>{String(s.rank).padStart(2, "0")}</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                                  <span style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap" }}>{s.skill}</span>
+                                </div>
+                                <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.jobs.toLocaleString()}</span>
+                                <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.pct}%</span>
+                                <div style={{ display: "flex", justifyContent: "center" }}><DeltaBadge delta={delta} size="small" /></div>
+                                <div style={{ display: "flex", justifyContent: "center" }}>
+                                  <Sparkline data={sparkData && sparkData.length >= 2 ? sparkData : s.trend} color={delta > 0 ? "#00ff88" : delta < 0 ? "#ff4444" : s.color} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -832,26 +1137,35 @@ export default function SkillTreeDashboard() {
                     ))}
                   </div>
                 ) : (
-                  /* Desktop: full table */
+                  /* Desktop: full table with trend data */
                   <div style={{ border: "1px solid rgba(0,240,255,0.08)", borderRadius: 12, overflow: "hidden", background: "rgba(255,255,255,0.01)" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 80px 90px", padding: "10px 16px", fontSize: 10, color: "#4b5563", textTransform: "uppercase", fontFamily: mono, borderBottom: "1px solid rgba(0,240,255,0.06)", background: "rgba(0,240,255,0.02)" }}>
-                      <span>#</span><span>Skill</span><span style={{ textAlign: "right" }}>Jobs</span><span style={{ textAlign: "right" }}>Share</span><span style={{ textAlign: "center" }}>Category</span><span style={{ textAlign: "center" }}>Trend</span>
+                    <div style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 80px 70px 90px", padding: "10px 16px", fontSize: 10, color: "#4b5563", textTransform: "uppercase", fontFamily: mono, borderBottom: "1px solid rgba(0,240,255,0.06)", background: "rgba(0,240,255,0.02)" }}>
+                      <span>#</span><span>Skill</span><span style={{ textAlign: "right" }}>Jobs</span><span style={{ textAlign: "right" }}>Share</span><span style={{ textAlign: "center" }}>Category</span><span style={{ textAlign: "center" }}>7d</span><span style={{ textAlign: "center" }}>Trend</span>
                     </div>
-                    {skillRankings.map((s, i) => (
-                      <div key={s.skill} style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 80px 90px", padding: "11px 16px", borderBottom: "1px solid rgba(255,255,255,0.02)", alignItems: "center", animation: `fadeUp .25s ease ${i * 0.03}s both` }}>
-                        <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 12 }}>{String(s.rank).padStart(2, "0")}</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
-                          <span style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap" }}>{s.skill}</span>
+                    {skillRankings.map((s, i) => {
+                      const sparkData = trendBulk.sparklines?.[s.skill];
+                      const delta = trendBulk.deltas?.[s.skill];
+                      return (
+                        <div key={s.skill} style={{ display: "grid", gridTemplateColumns: "45px 1fr 90px 75px 80px 70px 90px", padding: "11px 16px", borderBottom: "1px solid rgba(255,255,255,0.02)", alignItems: "center", animation: `fadeUp .25s ease ${i * 0.03}s both`, cursor: "pointer" }} onClick={() => { setSelectedSkill(s.skill); setTab("trends"); }}>
+                          <span style={{ fontFamily: mono, color: "#4b5563", fontSize: 12 }}>{String(s.rank).padStart(2, "0")}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap" }}>{s.skill}</span>
+                          </div>
+                          <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.jobs.toLocaleString()}</span>
+                          <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.pct}%</span>
+                          <div style={{ display: "flex", justifyContent: "center" }}>
+                            <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: "#6b7280", fontFamily: mono, whiteSpace: "nowrap" }}>{s.category}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "center" }}>
+                            <DeltaBadge delta={delta} size="small" />
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "center" }}>
+                            <Sparkline data={sparkData && sparkData.length >= 2 ? sparkData : s.trend} color={delta > 0 ? "#00ff88" : delta < 0 ? "#ff4444" : s.color} />
+                          </div>
                         </div>
-                        <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.jobs.toLocaleString()}</span>
-                        <span style={{ textAlign: "right", fontFamily: mono, fontSize: 12 }}>{s.pct}%</span>
-                        <div style={{ display: "flex", justifyContent: "center" }}>
-                          <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: "#6b7280", fontFamily: mono, whiteSpace: "nowrap" }}>{s.category}</span>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "center" }}><Sparkline data={s.trend} color={s.color} /></div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

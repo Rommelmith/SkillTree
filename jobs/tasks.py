@@ -146,6 +146,34 @@ def run_fetch(
                 )
                 if old_ids:
                     AnalyticsSnapshot.objects.filter(id__in=old_ids).delete()
+
+            # ── Skill Snapshots (historical trend data) ──────────────────
+            try:
+                from .models import SkillSnapshot
+                now = timezone.now()
+                total_jobs = len(scraped_jobs)
+                skill_rankings = analytics_data.get("skill_rankings", [])
+                snapshot_rows = [
+                    SkillSnapshot(
+                        skill_name=sr["skill"],
+                        mention_count=sr["jobs"],
+                        total_jobs=total_jobs,
+                        scraped_at=now,
+                    )
+                    for sr in skill_rankings
+                ]
+                if snapshot_rows:
+                    with transaction.atomic():
+                        SkillSnapshot.objects.bulk_create(snapshot_rows)
+                    logger.info("Saved %d skill snapshots", len(snapshot_rows))
+
+                # Prune raw snapshots older than 30 days
+                cutoff = now - timezone.timedelta(days=30)
+                pruned, _ = SkillSnapshot.objects.filter(scraped_at__lt=cutoff).delete()
+                if pruned:
+                    logger.info("Pruned %d old skill snapshots", pruned)
+            except Exception as snap_err:
+                logger.warning("Skill snapshots skipped: %s", snap_err)
         else:
             logger.warning("Scrape returned 0 jobs; preserving previous analytics snapshot.")
 

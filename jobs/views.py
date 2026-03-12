@@ -274,6 +274,116 @@ class HotJobsView(APIView):
         })
 
 
+class TrendMoversView(APIView):
+    """
+    GET /api/trends/movers/
+    Returns top risers and fallers by skill demand delta.
+    """
+
+    def get(self, request):
+        from .trends import (
+            get_declining_skills,
+            get_movers_from_snapshots,
+            get_trending_skills,
+        )
+
+        period = int(request.query_params.get("period", 7))
+        n = int(request.query_params.get("n", 5))
+
+        risers = get_trending_skills(n=n, period_days=period)
+        fallers = get_declining_skills(n=n, period_days=period)
+
+        # Fallback: if no daily aggregates yet, compare last two snapshots
+        if not risers and not fallers:
+            risers, fallers = get_movers_from_snapshots(n=n)
+
+        return Response({"risers": risers, "fallers": fallers})
+
+
+class SkillTrendView(APIView):
+    """
+    GET /api/trends/skill/<skill_name>/
+    Returns timeseries, deltas, and velocity for a specific skill.
+    """
+
+    def get(self, request, skill_name):
+        from .trends import (
+            get_monthly_delta,
+            get_skill_timeseries,
+            get_velocity,
+            get_week_over_week_delta,
+        )
+
+        days = int(request.query_params.get("days", 90))
+        timeseries = get_skill_timeseries(skill_name, days=days)
+        delta_7d = get_week_over_week_delta(skill_name)
+        delta_30d = get_monthly_delta(skill_name)
+        velocity = get_velocity(skill_name)
+
+        # Current mention count from latest analytics
+        current_mentions = 0
+        rank = None
+        snap = AnalyticsSnapshot.objects.first()
+        if snap and snap.data:
+            for sr in snap.data.get("skill_rankings", []):
+                if sr["skill"] == skill_name:
+                    current_mentions = sr["jobs"]
+                    rank = sr["rank"]
+                    break
+
+        return Response({
+            "skill": skill_name,
+            "timeseries": timeseries,
+            "delta_7d": delta_7d,
+            "delta_30d": delta_30d,
+            "velocity": velocity,
+            "current_mentions": current_mentions,
+            "rank": rank,
+        })
+
+
+class TrendRankingsView(APIView):
+    """
+    GET /api/trends/rankings/
+    Current skill rankings with movement indicators vs previous period.
+    """
+
+    def get(self, request):
+        from .trends import get_skill_rankings_with_movement
+
+        n = int(request.query_params.get("n", 50))
+        rankings = get_skill_rankings_with_movement(n=n)
+        return Response({"rankings": rankings})
+
+
+class TrendBulkView(APIView):
+    """
+    GET /api/trends/bulk/
+    Returns sparkline + delta data for all skills in one request.
+    Used by the frontend to avoid N+1 API calls.
+    """
+
+    def get(self, request):
+        from .trends import get_delta_bulk, get_sparkline_bulk
+
+        # Get skill names from the latest analytics snapshot
+        snap = AnalyticsSnapshot.objects.first()
+        if not snap or not snap.data:
+            return Response({"sparklines": {}, "deltas": {}})
+
+        skill_names = [sr["skill"] for sr in snap.data.get("skill_rankings", [])]
+        if not skill_names:
+            return Response({"sparklines": {}, "deltas": {}})
+
+        days = int(request.query_params.get("days", 30))
+        period = int(request.query_params.get("period", 7))
+
+        sparklines = get_sparkline_bulk(skill_names, days=days)
+        deltas = get_delta_bulk(skill_names, period_days=period)
+
+        return Response({"sparklines": sparklines, "deltas": deltas})
+
+
 def _next_run_seconds():
     """Seconds until the next scheduled fetch."""
     try:

@@ -103,3 +103,41 @@ class FetchLog(models.Model):
         if self.completed_at and self.started_at:
             return (self.completed_at - self.started_at).seconds
         return None
+
+
+class SkillSnapshot(models.Model):
+    """Per-skill mention count captured after each scrape cycle."""
+
+    skill_name = models.CharField(max_length=100, db_index=True)
+    mention_count = models.IntegerField()
+    total_jobs = models.IntegerField(help_text="Total jobs in this scrape cycle")
+    scraped_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["skill_name", "scraped_at"]),
+        ]
+        ordering = ["-scraped_at"]
+
+    def __str__(self):
+        return f"{self.skill_name}: {self.mention_count} ({self.scraped_at.strftime('%Y-%m-%d %H:%M')})"
+
+
+class DailySkillAggregate(models.Model):
+    """Daily rollup of SkillSnapshot data for long-term trend analysis."""
+
+    skill_name = models.CharField(max_length=100, db_index=True)
+    date = models.DateField()
+    total_mentions = models.IntegerField()
+    num_snapshots = models.IntegerField(default=1)
+    avg_mentions = models.FloatField()
+
+    class Meta:
+        unique_together = ["skill_name", "date"]
+        indexes = [
+            models.Index(fields=["skill_name", "date"]),
+        ]
+        ordering = ["-date"]
+
+    def __str__(self):
+        return f"{self.skill_name}: {self.total_mentions} ({self.date})"
